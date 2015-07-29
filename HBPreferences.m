@@ -62,6 +62,11 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 		_defaults = [[NSMutableDictionary alloc] init];
 		_pointers = [[NSMutableDictionary alloc] init];
 
+		_preferences = [[NSMutableDictionary dictionaryWithContentsOfFile:[NSString stringWithFormat:@"/var/mobile/Library/Preferences/%@.plist", _identifier]] retain];
+		if (!_preferences) {
+			_preferences = [[[NSMutableDictionary alloc] init] retain];
+		}
+
 		static dispatch_once_t onceToken;
 		dispatch_once(&onceToken, ^{
 			KnownIdentifiers = [[NSMutableDictionary alloc] init];
@@ -78,7 +83,7 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 #pragma mark - Reloading
 
 - (BOOL)synchronize {
-	return CFPreferencesSynchronize((CFStringRef)_identifier, CFSTR("mobile"), kCFPreferencesCurrentHost);
+	return [_preferences writeToFile:[NSString stringWithFormat:@"/var/mobile/Library/Preferences/%@.plist", _identifier] atomically:YES];
 }
 
 - (void)_didReceiveDarwinNotification {
@@ -155,7 +160,7 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 #pragma mark - Getters
 
 - (id)_objectForKey:(NSString *)key {
-	return [(id)CFPreferencesCopyValue((CFStringRef)key, (CFStringRef)_identifier, CFSTR("mobile"), kCFPreferencesCurrentHost) autorelease];
+	return [[_preferences objectForKey:key] retain];
 }
 
 - (id)objectForKey:(NSString *)key {
@@ -213,13 +218,7 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 #pragma mark - Setters
 
 - (void)setObject:(id)value forKey:(NSString *)key {
-	if (getuid() != 501) {
-		[NSException raise:HBPreferencesNotMobileException format:@"Writing preferences as a non-mobile user is disallowed."];
-	}
-
 	_preferences[key] = value;
-
-	CFPreferencesSetValue((CFStringRef)key, (CFPropertyListRef)value, (CFStringRef)_identifier, CFSTR("mobile"), kCFPreferencesCurrentHost);
 
 	if (!HAS_CFPREFSD) {
 		[self synchronize];
@@ -315,6 +314,7 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 	[_identifier release];
 	[_defaults release];
 	[_pointers release];
+	[_preferences release];
 	[_preferenceChangeBlocks release];
 	[_preferenceChangeBlocksGlobal release];
 
