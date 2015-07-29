@@ -4,6 +4,10 @@
 
 #define HAS_CFPREFSD (IS_IOS_OR_NEWER(iOS_8_0))
 
+@interface NSUserDefaults (Private)
+- (instancetype)_initWithSuiteName:(NSString *)suiteName container:(NSURL *)container;
+@end
+
 typedef NS_ENUM(NSUInteger, HBPreferencesType) {
 	HBPreferencesTypeObjectiveC,
 	HBPreferencesTypeInteger,
@@ -37,7 +41,7 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 }
 
 @implementation HBPreferences {
-	NSMutableDictionary *_preferences;
+	NSUserDefaults *_preferences;
 	NSMutableDictionary *_pointers;
 
 	NSMutableDictionary *_preferenceChangeBlocks;
@@ -69,6 +73,8 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 
 		KnownIdentifiers[_identifier] = self;
 
+		_preferences = [[NSUserDefaults alloc] _initWithSuiteName:_identifier container:[NSURL URLWithString:@"/var/mobile"]];
+
 		CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, HBPreferencesDarwinNotifyCallback, (CFStringRef)[_identifier stringByAppendingPathComponent:@"ReloadPrefs"], NULL, kNilOptions);
 	}
 
@@ -78,13 +84,11 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 #pragma mark - Reloading
 
 - (BOOL)synchronize {
-	return CFPreferencesSynchronize((CFStringRef)_identifier, CFSTR("mobile"), kCFPreferencesCurrentHost);
+	return [_preferences synchronize];
 }
 
 - (void)_didReceiveDarwinNotification {
-	if (!HAS_CFPREFSD) {
-		[self synchronize];
-	}
+	[self synchronize];
 
 	[self _updateRegisteredObjects];
 	[[NSNotificationCenter defaultCenter] postNotification:[NSNotification notificationWithName:HBPreferencesDidChangeNotification object:self]];
@@ -155,7 +159,7 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 #pragma mark - Getters
 
 - (id)_objectForKey:(NSString *)key {
-	return [(id)CFPreferencesCopyValue((CFStringRef)key, (CFStringRef)_identifier, CFSTR("mobile"), kCFPreferencesCurrentHost) autorelease];
+	return [_preferences objectForKey:key];
 }
 
 - (id)objectForKey:(NSString *)key {
@@ -217,13 +221,9 @@ void HBPreferencesDarwinNotifyCallback(CFNotificationCenterRef center, void *obs
 		[NSException raise:HBPreferencesNotMobileException format:@"Writing preferences as a non-mobile user is disallowed."];
 	}
 
-	_preferences[key] = value;
+	[_preferences setObject:value forKey:key];
 
-	CFPreferencesSetValue((CFStringRef)key, (CFPropertyListRef)value, (CFStringRef)_identifier, CFSTR("mobile"), kCFPreferencesCurrentHost);
-
-	if (!HAS_CFPREFSD) {
-		[self synchronize];
-	}
+	[self synchronize];
 
 	[[NSNotificationCenter defaultCenter] postNotification:[NSNotification notificationWithName:HBPreferencesDidChangeNotification object:self]];
 }
